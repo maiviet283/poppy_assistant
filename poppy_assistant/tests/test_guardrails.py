@@ -1,11 +1,3 @@
-"""
-test_guardrails.py — Test nghiệp vụ THUẦN LOGIC, KHÔNG tốn token (bài học demo #9).
-
-Dùng một backend giả (không đụng DB) để kiểm máy trạng thái confirm-before-commit:
-thiếu trường -> need_more_info; chưa xác nhận -> needs_confirmation; trùng ->
-already_booked (idempotent). Chạy: ``python manage.py test poppy_assistant``.
-"""
-
 from __future__ import annotations
 
 from django.test import SimpleTestCase
@@ -15,6 +7,8 @@ from poppy_assistant.booking import service
 
 
 class GuardrailHelpersTests(SimpleTestCase):
+    """Unit tests for the pure guardrail helpers."""
+
     def test_is_true(self):
         self.assertTrue(guardrails.is_true(True))
         self.assertTrue(guardrails.is_true("true"))
@@ -31,7 +25,7 @@ class GuardrailHelpersTests(SimpleTestCase):
 
 
 class _FakeBackend:
-    """Backend giả trong RAM — đủ cho create_booking chạy qua các cửa guardrails."""
+    """In-memory backend covering the create_booking guardrail path."""
 
     def __init__(self, dup=None):
         self._dup = dup
@@ -55,6 +49,8 @@ class _FakeBackend:
 
 
 class CreateBookingGateTests(SimpleTestCase):
+    """Tests for the confirm-before-commit gates in create_booking."""
+
     def setUp(self):
         self._orig_backend = service.get_backend
         self._orig_notify = service.notify_staff
@@ -93,7 +89,7 @@ class CreateBookingGateTests(SimpleTestCase):
         )
         self.assertTrue(r["ok"])
         self.assertEqual(r["status"], "already_booked")
-        self.assertEqual(fake.created, [])  # KHÔNG tạo bản trùng
+        self.assertEqual(fake.created, [])  # no duplicate created
 
     def test_commit_when_confirmed_and_unique(self):
         fake = _FakeBackend()

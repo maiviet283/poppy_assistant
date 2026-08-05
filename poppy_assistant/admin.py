@@ -1,5 +1,3 @@
-"""admin.py — Đăng ký Offering/Resource/Booking vào /admin/ của khách."""
-
 from django.contrib import admin
 
 from poppy_assistant.models import Booking, Offering, Resource

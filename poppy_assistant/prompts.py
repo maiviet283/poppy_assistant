@@ -1,12 +1,3 @@
-"""
-prompts.py — System prompt của Poppy (chat) dựng TỪ CẤU HÌNH (config-as-data).
-
-Khác demo (prompt cứng cho tiệm nail): ở đây prompt được ghép từ business profile
-trong ``POPPY`` (BUSINESS_NAME, ASSISTANT_NAME, TONE, CUSTOM_RULES) — đổi tính cách/
-tên doanh nghiệp KHÔNG cần sửa code. Gọi ``build_system_prompt()`` MỖI request để
-prompt luôn tươi (session sống lâu không giữ prompt cũ — bài học demo).
-"""
-
 from __future__ import annotations
 
 from poppy_assistant import conf
@@ -59,7 +50,7 @@ RULES:
 
 
 def build_system_prompt() -> str:
-    """Ghép system prompt từ business profile trong POPPY."""
+    """Build the chat system prompt from the business profile in settings.POPPY."""
     custom = (conf.CUSTOM_RULES or "").strip()
     custom_block = f"\nADDITIONAL RULES FROM THE BUSINESS:\n{custom}\n" if custom else ""
     return _TEMPLATE.format(
@@ -71,7 +62,11 @@ def build_system_prompt() -> str:
 
 
 def _now_line() -> str:
-    """Ngày giờ hiện tại + bảng ngày sắp tới để model quy đổi 'thứ Bảy này' -> ISO."""
+    """Return the current date/time plus a lookup table of upcoming dates.
+
+    The model maps phrases like "this Saturday" to an ISO date from this table
+    rather than computing weekdays itself.
+    """
     from datetime import timedelta
 
     from django.utils import timezone
@@ -91,7 +86,7 @@ def _now_line() -> str:
 
 
 def build_user_context(question: str, documents: str) -> str:
-    """Ghép câu hỏi + ngày giờ hiện tại + thông tin tham khảo (RAG)."""
+    """Combine the current date/time, retrieved reference documents, and the question."""
     docs_block = (
         "REFERENCE INFORMATION (use this to answer the question below):\n"
         "----------------------------------------------------\n"

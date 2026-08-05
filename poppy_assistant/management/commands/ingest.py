@@ -1,13 +1,3 @@
-"""
-Management command: nạp tài liệu docs/*.md vào ChromaDB cho RAG.
-
-    python manage.py ingest
-
-Đọc mọi file .md trong POPPY['DOCS_DIR'], cắt chunk theo tiêu đề "## ", rồi nạp vào
-ChromaDB. Embedding chạy LOCAL (ONNX) nên KHÔNG có quota — nạp một lần, không cần
-nghỉ giữa lô như bản demo cũ. Chạy lại mỗi khi thêm/sửa tài liệu.
-"""
-
 from __future__ import annotations
 
 import re
@@ -20,26 +10,27 @@ from poppy_assistant.rag import get_collection
 
 
 def chunk_markdown(text: str) -> list[str]:
-    """Cắt markdown theo tiêu đề cấp 2 ("## ") để truy xuất chính xác hơn."""
+    """Split markdown on level-2 headings ("## ") for more precise retrieval."""
     parts = re.split(r"(?=^##\s)", text, flags=re.MULTILINE)
     return [p.strip() for p in parts if p.strip()]
 
 
 class Command(BaseCommand):
-    help = "Nạp tài liệu docs/*.md vào ChromaDB cho RAG."
+    help = "Load docs/*.md into ChromaDB for retrieval."
 
     def handle(self, *args, **options) -> None:
+        """Rebuild the vector index from every markdown file in DOCS_DIR."""
         self.stdout.write(conf.summary())
-        self.stdout.write("\n[INGEST] Bắt đầu nạp tài liệu...")
+        self.stdout.write("\n[INGEST] Loading documents...")
 
         md_files = sorted(conf.DOCS_DIR.glob("*.md"))
         if not md_files:
-            self.stdout.write(f"[INGEST] Không tìm thấy file .md nào trong {conf.DOCS_DIR}")
+            self.stdout.write(f"[INGEST] No .md files found in {conf.DOCS_DIR}")
             return
 
         collection = get_collection(create_if_missing=True)
 
-        # Xóa dữ liệu cũ để build lại từ đầu (tránh trùng lặp).
+        # Clear existing entries so the index is rebuilt from scratch.
         existing = collection.get()
         if existing["ids"]:
             collection.delete(ids=existing["ids"])
@@ -55,12 +46,12 @@ class Command(BaseCommand):
                 ids.append(f"{path.stem}-{i}")
                 docs.append(chunk)
                 metas.append({"title": str(title), "source": path.name, "chunk": i})
-            self.stdout.write(f"  - {path.name}: {len(chunks)} đoạn")
+            self.stdout.write(f"  - {path.name}: {len(chunks)} chunks")
 
         if ids:
             collection.add(ids=ids, documents=docs, metadatas=metas)
 
         self.stdout.write(
-            self.style.SUCCESS(f"\n[INGEST] Hoàn tất! Đã nạp {len(ids)} đoạn từ {len(md_files)} file.")
+            self.style.SUCCESS(f"\n[INGEST] Done. Loaded {len(ids)} chunks from {len(md_files)} files.")
         )
-        self.stdout.write(f"[INGEST] Vector DB lưu tại: {conf.CHROMA_DB_DIR}")
+        self.stdout.write(f"[INGEST] Vector DB stored at: {conf.CHROMA_DB_DIR}")

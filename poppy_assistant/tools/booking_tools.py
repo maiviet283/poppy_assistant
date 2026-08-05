@@ -1,11 +1,7 @@
-"""
-booking_tools.py — Đăng ký bộ tool đặt lịch vào registry (tag "booking").
-
-Chỉ KHAI BÁO (schema + trỏ handler sang booking/service.py). Guardrails nằm ở
-service; ở đây không có luật nghiệp vụ. Import module này là tự đăng ký.
-"""
-
 from __future__ import annotations
+
+# Declarations only: schemas plus handlers in booking/service.py, where the
+# guardrails live. Importing this module registers the booking tools.
 
 from poppy_assistant.booking import service
 from poppy_assistant.tools.registry import register

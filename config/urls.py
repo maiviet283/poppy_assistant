@@ -1,12 +1,3 @@
-"""
-urls.py — Định tuyến project host demo.
-
-  /admin/  -> Django admin (quản lý Offering/Resource/Booking)
-  /api/    -> API của module (poppy_assistant.urls)
-  /        -> trang test tích hợp (examples/poppy-embed-example.html) — same-origin
-              nên cookie session hoạt động, tiện thử nhanh không dính CORS.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -20,9 +11,10 @@ _EXAMPLE = Path(settings.BASE_DIR) / "examples" / "poppy-embed-example.html"
 
 
 def demo_index(request):
+    """Serve the bundled integration test page, or a minimal fallback."""
     if _EXAMPLE.exists():
         return HttpResponse(_EXAMPLE.read_text(encoding="utf-8"))
-    return HttpResponse("<h1>Poppy module</h1><p>API ở <code>/api/chat</code>.</p>")
+    return HttpResponse("<h1>Poppy module</h1><p>API at <code>/api/chat</code>.</p>")
 
 
 urlpatterns = [

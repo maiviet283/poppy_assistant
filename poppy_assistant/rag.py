@@ -1,12 +1,3 @@
-"""
-rag.py — Tầng truy xuất tài liệu (Retrieval) cho RAG.
-
-Kết nối ChromaDB (đã build bởi ``ingest``) và với mỗi câu hỏi tìm các đoạn tài liệu
-liên quan nhất. Embedding chạy NGAY TRÊN MÁY bằng model ONNX nhỏ (all-MiniLM-L6-v2,
-384 chiều) đi kèm ChromaDB — MIỄN PHÍ, không cần key, không quota, không thể "chết
-key". Lúc ingest và lúc query dùng CÙNG một embedding function nên vector khớp nhau.
-"""
-
 from __future__ import annotations
 
 import chromadb
@@ -14,12 +5,13 @@ from chromadb.utils import embedding_functions
 
 from poppy_assistant import conf
 
-# Embedding cục bộ: không phụ thuộc Gemini/OpenAI, không tốn tiền, không quota.
+# Local embedding model bundled with ChromaDB; no API key or quota required, and it
+# must match the function used at ingest time so query vectors align.
 _embedding_fn = embedding_functions.DefaultEmbeddingFunction()
 
 
 def get_collection(create_if_missing: bool = False):
-    """Lấy (hoặc tạo) collection trong ChromaDB lưu ở ổ đĩa."""
+    """Return the on-disk ChromaDB collection, optionally creating it."""
     client = chromadb.PersistentClient(path=str(conf.CHROMA_DB_DIR))
     if create_if_missing:
         return client.get_or_create_collection(
@@ -31,9 +23,9 @@ def get_collection(create_if_missing: bool = False):
 
 
 def search(question: str, top_k: int | None = None) -> str:
-    """Tìm các đoạn tài liệu liên quan nhất; trả chuỗi đã ghép (kèm tiêu đề).
+    """Return the most relevant document chunks joined into a single string.
 
-    Chưa build index hoặc không có kết quả -> trả chuỗi rỗng.
+    Returns an empty string when the index is missing or has no matches.
     """
     top_k = top_k or conf.RAG_TOP_K
     try:
@@ -49,6 +41,6 @@ def search(question: str, top_k: int | None = None) -> str:
 
     blocks = []
     for doc, meta in zip(documents, metadatas):
-        title = (meta or {}).get("title", "Tài liệu")
+        title = (meta or {}).get("title", "Document")
         blocks.append(f"### {title}\n{doc}")
     return "\n\n".join(blocks)

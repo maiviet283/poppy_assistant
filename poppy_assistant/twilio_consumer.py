@@ -1,13 +1,3 @@
-"""
-twilio_consumer.py — Cầu nối Twilio Media Stream ⇄ Gemini Live (gọi vào SỐ ĐIỆN THOẠI).
-
-Song song với ``consumers.py`` (gọi online): "bộ não" giống hệt (build_live_config +
-run_tool + registry) — chỉ khác "đường ống audio":
-  - Twilio gửi audio JSON (base64 µ-law 8kHz); Gemini cần PCM 16kHz vào, PCM 24kHz ra.
-  => chuyển mã hai chiều bằng ``audioop`` (có sẵn trong Python 3.12).
-Điện thoại thì AI phải CHÀO TRƯỚC (người ta áp tai chờ nghe).
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -37,12 +27,18 @@ def _log(*args) -> None:
 
 
 class TwilioVoiceConsumer(AsyncWebsocketConsumer):
-    """Một cuộc gọi điện thoại = một Media Stream Twilio = một phiên Gemini Live."""
+    """Twilio media stream <-> Gemini Live bridge for a real phone call.
+
+    Same core as ``VoiceConsumer`` (build_live_config + run_tool + registry); only the
+    audio path differs. Twilio sends base64 µ-law 8kHz and Gemini needs PCM 16kHz in /
+    24kHz out, so audio is transcoded both ways with ``audioop``. On a phone call the
+    assistant greets first, since the caller is already listening.
+    """
 
     async def connect(self) -> None:
         await self.accept()
         if not conf.GEMINI_API_KEY:
-            _log("Thiếu GEMINI_API_KEY — không mở được phiên Live.")
+            _log("GEMINI_API_KEY missing; cannot open a Live session.")
             await self.close()
             return
 
@@ -52,7 +48,7 @@ class TwilioVoiceConsumer(AsyncWebsocketConsumer):
         self._out_state = None
         self._out_buf = b""
 
-        _log("Twilio đã kết nối. Đang mở phiên Gemini Live...")
+        _log("Twilio connected. Opening Gemini Live session...")
         self._client = genai.Client(api_key=conf.GEMINI_API_KEY)
         self._session_cm = self._client.aio.live.connect(
             model=conf.VOICE_MODEL, config=build_live_config()
@@ -60,11 +56,11 @@ class TwilioVoiceConsumer(AsyncWebsocketConsumer):
         try:
             self.session = await self._session_cm.__aenter__()
         except Exception as exc:
-            _log(f"❌ Không mở được phiên Live: {type(exc).__name__}: {exc}")
+            _log(f"Failed to open Live session: {type(exc).__name__}: {exc}")
             await self.close()
             return
 
-        _log(f"Phiên Live đã mở (model={conf.VOICE_MODEL}).")
+        _log(f"Live session open (model={conf.VOICE_MODEL}).")
         self._recv_task = asyncio.create_task(self._gemini_to_twilio())
 
     async def receive(self, text_data=None, bytes_data=None) -> None:
@@ -80,13 +76,14 @@ class TwilioVoiceConsumer(AsyncWebsocketConsumer):
             await self._forward_media(msg)
         elif event == "start":
             self.stream_sid = msg.get("start", {}).get("streamSid") or msg.get("streamSid", "")
-            _log(f"▶️  Cuộc gọi bắt đầu (streamSid={self.stream_sid}).")
+            _log(f"Call started (streamSid={self.stream_sid}).")
             await self._greet_once()
         elif event == "stop":
-            _log("⏹️  Twilio báo kết thúc cuộc gọi.")
+            _log("Twilio signalled end of call.")
             await self.close()
 
     async def _forward_media(self, msg: dict) -> None:
+        """Transcode inbound µ-law 8kHz to PCM 16kHz and send it to Gemini."""
         session = getattr(self, "session", None)
         if session is None:
             return
@@ -103,11 +100,12 @@ class TwilioVoiceConsumer(AsyncWebsocketConsumer):
                 audio=types.Blob(data=pcm16, mime_type="audio/pcm;rate=16000")
             )
         except Exception as exc:
-            _log(f"❌ Phiên Gemini đã đóng, kết thúc cuộc gọi: {type(exc).__name__}: {exc}")
+            _log(f"Gemini session closed, ending call: {type(exc).__name__}: {exc}")
             self.session = None
             await self.close()
 
     async def _greet_once(self) -> None:
+        """Have the assistant speak a short greeting once the call connects."""
         if self._greeted:
             return
         self._greeted = True
@@ -128,9 +126,10 @@ class TwilioVoiceConsumer(AsyncWebsocketConsumer):
                 turn_complete=True,
             )
         except Exception as exc:
-            _log(f"⚠️  Không gửi được lời chào mở đầu: {type(exc).__name__}: {exc}")
+            _log(f"Failed to send opening greeting: {type(exc).__name__}: {exc}")
 
     async def _gemini_to_twilio(self) -> None:
+        """Forward Gemini audio and tool calls back to Twilio."""
         turn = 0
         try:
             while True:
@@ -143,7 +142,7 @@ class TwilioVoiceConsumer(AsyncWebsocketConsumer):
                         responses = []
                         for fc in resp.tool_call.function_calls:
                             args = dict(fc.args or {})
-                            _log(f"🔧 [TOOL] {fc.name}({args})")
+                            _log(f"[tool] {fc.name}({args})")
                             result = await asyncio.to_thread(run_tool, fc.name, args)
                             responses.append(
                                 types.FunctionResponse(id=fc.id, name=fc.name, response=result)
@@ -153,20 +152,20 @@ class TwilioVoiceConsumer(AsyncWebsocketConsumer):
                     sc = resp.server_content
                     if sc:
                         if sc.interrupted:
-                            _log("⏸️  Bị ngắt (khách chen ngang).")
+                            _log("Interrupted (customer spoke over).")
                             await self._clear_twilio()
                         if sc.output_transcription and sc.output_transcription.text:
                             t = sc.output_transcription.text
                             if _CTRL_TOKEN_RE.sub("", t).strip():
-                                _log(f"🤖 [BOT NÓI] {t!r}")
+                                _log(f"[bot] {t!r}")
                         if sc.input_transcription and sc.input_transcription.text:
-                            _log(f"🧑 [KHÁCH NÓI] {sc.input_transcription.text!r}")
+                            _log(f"[caller] {sc.input_transcription.text!r}")
 
-                _log(f"✅ Lượt #{turn} xong.")
+                _log(f"Turn #{turn} done.")
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            _log(f"❌ Lỗi luồng nghe Gemini, kết thúc cuộc gọi: {type(exc).__name__}: {exc}")
+            _log(f"Gemini receive loop failed, ending call: {type(exc).__name__}: {exc}")
             self.session = None
             try:
                 await self.close()
@@ -174,6 +173,7 @@ class TwilioVoiceConsumer(AsyncWebsocketConsumer):
                 pass
 
     async def _send_audio(self, pcm24: bytes) -> None:
+        """Transcode outbound PCM 24kHz to µ-law 8kHz and stream it to Twilio in frames."""
         if not self.stream_sid:
             return
         pcm8, self._out_state = audioop.ratecv(
@@ -189,13 +189,14 @@ class TwilioVoiceConsumer(AsyncWebsocketConsumer):
             }))
 
     async def _clear_twilio(self) -> None:
+        """Drop buffered audio and tell Twilio to clear its playback queue."""
         self._out_buf = b""
         if not self.stream_sid:
             return
         await self.send(text_data=json.dumps({"event": "clear", "streamSid": self.stream_sid}))
 
     async def disconnect(self, code) -> None:
-        _log(f"Đóng cuộc gọi (code={code}). Dọn dẹp...")
+        _log(f"Closing call (code={code}). Cleaning up...")
         task = getattr(self, "_recv_task", None)
         if task is not None:
             task.cancel()

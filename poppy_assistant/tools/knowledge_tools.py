@@ -1,12 +1,8 @@
-"""
-knowledge_tools.py — Đăng ký tool tra cứu tri thức (RAG) vào registry (tag "faq").
-
-Dùng cho voice (phiên Live cần RAG dưới dạng tool). Ở chat, RAG được ghép sẵn vào
-ngữ cảnh mỗi lượt (xem orchestrator), nên tool này chủ yếu phục vụ voice — nhưng
-đăng ký chung một chỗ để chat bật kèm cũng được.
-"""
-
 from __future__ import annotations
+
+# Retrieval exposed as a tool, mainly for voice sessions. Chat splices RAG into
+# each turn's context directly (see orchestrator), but registering it here lets
+# chat opt in as well.
 
 from poppy_assistant import rag
 from poppy_assistant.tools.registry import register

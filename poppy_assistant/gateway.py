@@ -1,11 +1,3 @@
-"""
-gateway.py — LLM Gateway: mọi lời gọi model chat đi qua đây (AI_PLATFORM §5.3).
-
-Gói một chỗ: tạo client OpenAI trỏ về Gemile (API tương thích OpenAI), retry lỗi
-tạm (503 quá tải / 429), và FAILOVER sang model dự phòng. Bài học demo (bẫy #5):
-spike 503 bám theo TỪNG model — đổi model là thoát ngay, không chỉ retry.
-"""
-
 from __future__ import annotations
 
 import time
@@ -14,12 +6,18 @@ from openai import InternalServerError, OpenAI, RateLimitError
 
 from poppy_assistant import conf
 
-# Thử lại 1 lần (2s) trên model chính rồi chuyển model dự phòng (pool tải riêng).
 _EXTRA_RETRIES = 1
 _RETRY_DELAYS = (2,)
 
 
 class LLMGateway:
+    """Single entry point for chat model calls, with retry and model failover.
+
+    Transient overload (503/429) tends to follow an individual model, so after a
+    short retry the gateway fails over to the fallback model rather than retrying
+    the same one.
+    """
+
     def __init__(self) -> None:
         self.client = OpenAI(
             api_key=conf.GEMINI_API_KEY,
@@ -28,7 +26,7 @@ class LLMGateway:
         )
 
     def create(self, messages: list[dict], tools: list[dict], stream: bool = False):
-        """Gọi chat completion; lỗi tạm thì retry rồi failover model. Ném lỗi cuối nếu hết cách."""
+        """Run a chat completion, retrying then failing over on transient errors."""
         models = [conf.CHAT_MODEL]
         if conf.CHAT_MODEL_FALLBACK and conf.CHAT_MODEL_FALLBACK != conf.CHAT_MODEL:
             models.append(conf.CHAT_MODEL_FALLBACK)
@@ -50,8 +48,8 @@ class LLMGateway:
                     if attempt >= _EXTRA_RETRIES:
                         break
                     wait = _RETRY_DELAYS[attempt]
-                    print(f"[CHAT] {model} quá tải ({type(exc).__name__}), thử lại sau {wait}s...", flush=True)
+                    print(f"[CHAT] {model} overloaded ({type(exc).__name__}), retrying in {wait}s...", flush=True)
                     time.sleep(wait)
             if m_i + 1 < len(models):
-                print(f"[CHAT] {model} vẫn quá tải — chuyển model dự phòng {models[m_i + 1]}.", flush=True)
+                print(f"[CHAT] {model} still overloaded, failing over to {models[m_i + 1]}.", flush=True)
         raise last_exc

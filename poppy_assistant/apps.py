@@ -1,5 +1,3 @@
-"""apps.py — AppConfig của module: validate cấu hình + warmup RAG (lười, nền)."""
-
 from __future__ import annotations
 
 import threading
@@ -8,19 +6,19 @@ from django.apps import AppConfig
 
 
 class PoppyAssistantConfig(AppConfig):
+    """Django app config: validate settings and warm up the retrieval index."""
+
     default_auto_field = "django.db.models.BigAutoField"
     name = "poppy_assistant"
     label = "poppy_assistant"
-    verbose_name = "Poppy — trợ lý AI lễ tân"
+    verbose_name = "Poppy assistant"
 
     def ready(self) -> None:
-        # 1) Fail loud nếu thiếu cấu hình cấu trúc (Trụ #3).
+        """Fail fast on invalid config, then warm the RAG index off the main thread."""
         from poppy_assistant import conf
 
         conf.validate()
 
-        # 2) Warmup RAG chạy NỀN + nuốt lỗi (Trụ #4: zero side-effect, không được
-        #    làm chậm/chết manage.py của khách nếu chưa build index).
         def _warm() -> None:
             try:
                 from poppy_assistant import rag

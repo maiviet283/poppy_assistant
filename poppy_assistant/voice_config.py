@@ -1,11 +1,3 @@
-"""
-voice_config.py — Cấu hình phiên Gemini Live cho "gọi điện" (online + số điện thoại).
-
-Khác demo: TOOL không khai lại ở đây — lấy thẳng từ registry qua ``genai_tool()``
-(khai báo MỘT nơi). System prompt dựng từ business profile (config-as-data). Online
-và điện thoại dùng chung file này.
-"""
-
 from __future__ import annotations
 
 from poppy_assistant import conf
@@ -39,6 +31,7 @@ RULES:
 
 
 def _voice_system_prompt() -> str:
+    """Build the voice system prompt from the business profile in settings.POPPY."""
     custom = (conf.CUSTOM_RULES or "").strip()
     custom_block = f"\nADDITIONAL RULES FROM THE BUSINESS:\n{custom}\n" if custom else ""
     return _VOICE_TEMPLATE.format(
@@ -50,7 +43,7 @@ def _voice_system_prompt() -> str:
 
 
 def build_live_config():
-    """Tạo cấu hình cho một phiên Live: audio + system prompt + tool + transcript."""
+    """Build a Gemini Live session config: audio, system prompt, tools and transcripts."""
     from datetime import timedelta
 
     from django.utils import timezone
@@ -78,5 +71,5 @@ def build_live_config():
 
 
 def run_tool(name: str, args: dict) -> dict:
-    """Thực thi tool Gemini yêu cầu (dùng chung registry với chat)."""
+    """Run a tool requested by Gemini Live, sharing the chat tool registry."""
     return tool_registry.run_tool(name, args, source="voice")

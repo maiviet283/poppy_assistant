@@ -1,10 +1,3 @@
-"""
-asgi.py — Điểm vào ASGI: phân luồng HTTP (Django) và WebSocket (Channels).
-
-Khách ghép ``poppy_assistant.routing.websocket_urlpatterns`` vào ProtocolTypeRouter
-của họ y như dưới đây (cạnh route WS sẵn có của họ, nếu có).
-"""
-
 import os
 import sys
 

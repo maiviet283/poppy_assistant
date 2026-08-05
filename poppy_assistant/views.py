@@ -1,11 +1,3 @@
-"""
-views.py — API chat text ``POST /chat`` (JSON hoặc SSE) + ``POST /call`` (gọi ĐI).
-
-Lịch sử hội thoại lưu trong session Django (key riêng ``poppy_chat_messages`` — Trụ
-#2 namespace) nên mỗi khách có mạch riêng mà server không giữ trạng thái trong RAM.
-Giữ nguyên các bẫy streaming đã đổ máu (bẫy #1/#2/#3).
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -24,7 +16,7 @@ _MAX_HISTORY = 40
 
 
 def _to_plain_text(text: str) -> str:
-    """Bỏ định dạng Markdown để câu trả lời là TEXT thuần (khách không muốn thấy ** ##)."""
+    """Strip Markdown so replies render as plain text."""
     text = re.sub(r"\*\*(.+?)\*\*", r"\1", text, flags=re.S)
     text = re.sub(r"__(.+?)__", r"\1", text, flags=re.S)
     text = re.sub(r"`([^`]+)`", r"\1", text)
@@ -34,7 +26,7 @@ def _to_plain_text(text: str) -> str:
 
 
 def _trim_history(messages: list[dict]) -> list[dict]:
-    """Giữ system prompt + đuôi gần đây; cắt tại ranh giới 'user' (không tách cặp tool)."""
+    """Keep the system prompt and recent tail, cutting at a 'user' boundary."""
     if len(messages) <= _MAX_HISTORY:
         return messages
     tail = messages[-(_MAX_HISTORY - 1):]
@@ -46,15 +38,15 @@ def _trim_history(messages: list[dict]) -> list[dict]:
 @csrf_exempt
 @require_POST
 def chat_api(request: HttpRequest):
-    """Một lượt hỏi/đáp; giữ lịch sử theo session. ``"stream": true`` -> SSE."""
+    """Handle one chat turn, persisting history in the session. ``stream`` -> SSE."""
     try:
         payload = json.loads(request.body or b"{}")
     except (json.JSONDecodeError, UnicodeDecodeError):
-        return JsonResponse({"error": "Body phải là JSON hợp lệ (UTF-8)."}, status=400)
+        return JsonResponse({"error": "Body must be valid JSON (UTF-8)."}, status=400)
 
     message = (payload.get("message") or "").strip()
     if not message:
-        return JsonResponse({"error": "Thiếu nội dung 'message'."}, status=400)
+        return JsonResponse({"error": "Missing 'message'."}, status=400)
 
     history = request.session.get(_SESSION_KEY)
     bot = Orchestrator(messages=history)
@@ -65,7 +57,7 @@ def chat_api(request: HttpRequest):
     try:
         reply = bot.ask(message)
     except Exception as exc:
-        print(f"[CHAT] Lỗi khi gọi model: {type(exc).__name__}: {exc}", flush=True)
+        print(f"[CHAT] Model call failed: {type(exc).__name__}: {exc}", flush=True)
         return JsonResponse({"reply": _BUSY_REPLY}, status=200)
 
     request.session[_SESSION_KEY] = _trim_history(bot.messages)
@@ -75,17 +67,17 @@ def chat_api(request: HttpRequest):
 @csrf_exempt
 @require_POST
 def call_api(request: HttpRequest):
-    """Đặt cuộc gọi ĐI: AI gọi vào số điện thoại thật (Twilio, optional [phone])."""
+    """Place an outbound call: the assistant dials a real phone number via Twilio."""
     try:
         payload = json.loads(request.body or b"{}")
     except (json.JSONDecodeError, UnicodeDecodeError):
-        return JsonResponse({"ok": False, "error": "Body phải là JSON hợp lệ."}, status=400)
+        return JsonResponse({"ok": False, "error": "Body must be valid JSON."}, status=400)
 
     phone = (payload.get("phone") or "").strip()
     if not phone:
         return JsonResponse({"ok": False, "error": "Missing phone number."}, status=400)
 
-    from poppy_assistant import telephony  # lazy: chỉ nạp khi thực sự gọi
+    from poppy_assistant import telephony  # lazy: only load when actually calling
 
     result = telephony.place_call(phone)
     return JsonResponse(result, status=200 if result.get("ok") else 502)
@@ -95,7 +87,7 @@ _SENTINEL = object()
 
 
 def _as_async_iterator(sync_gen):
-    """Bọc generator đồng bộ thành async iterator (ASGI mới stream thật — bẫy #2)."""
+    """Wrap a synchronous generator as an async iterator so ASGI streams it live."""
 
     async def aiter():
         while True:
@@ -108,8 +100,8 @@ def _as_async_iterator(sync_gen):
 
 
 def _chat_stream_response(request: HttpRequest, bot: Orchestrator, message: str):
-    """SSE: nhiều event ``{"delta"}``/``{"reset"}`` rồi chốt ``{"done","text"}``."""
-    # Tạo session TRƯỚC khi stream (Set-Cookie chốt lúc gửi headers — bẫy #3).
+    """Stream a turn over SSE: ``{delta}``/``{reset}`` events then a final ``{done}``."""
+    # Create the session before streaming, since Set-Cookie is fixed once headers go out.
     if not request.session.session_key:
         request.session.create()
     request.session.modified = True
@@ -128,7 +120,7 @@ def _chat_stream_response(request: HttpRequest, bot: Orchestrator, message: str)
                 parts.append(chunk)
                 yield f'data: {json.dumps({"delta": chunk}, ensure_ascii=False)}\n\n'
         except Exception as exc:
-            print(f"[CHAT] Lỗi stream: {type(exc).__name__}: {exc}", flush=True)
+            print(f"[CHAT] Stream error: {type(exc).__name__}: {exc}", flush=True)
             if not parts:
                 parts.append(_BUSY_REPLY)
                 yield f'data: {json.dumps({"delta": _BUSY_REPLY}, ensure_ascii=False)}\n\n'

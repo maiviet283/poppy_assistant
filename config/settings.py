@@ -1,11 +1,3 @@
-"""
-settings.py — Project HOST demo để chạy & test module poppy_assistant.
-
-Đây đóng vai "project Django của khách": chỉ cài module + khai dict POPPY. Khi tích
-hợp vào project thật của khách, họ chép khối POPPY + 3 dòng INSTALLED_APPS/ASGI vào
-settings của họ (xem INSTALL.md), KHÔNG cần file này.
-"""
-
 from __future__ import annotations
 
 import os
@@ -13,7 +5,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Nạp .env nếu có python-dotenv (tiện dev; production dùng biến môi trường thật).
+# Load .env for local development; production uses real environment variables.
 try:
     from dotenv import load_dotenv
 
@@ -21,7 +13,7 @@ try:
 except Exception:
     pass
 
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-only-key-doi-truoc-khi-len-that")
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-only-key-change-me")
 DEBUG = os.getenv("DJANGO_DEBUG", "true").lower() in ("1", "true", "yes")
 ALLOWED_HOSTS = [h.strip() for h in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,0.0.0.0").split(",") if h.strip()]
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()]
@@ -78,22 +70,17 @@ USE_TZ = True
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = os.getenv("TIME_ZONE", "Asia/Ho_Chi_Minh")
 
-# ============================================================================
-# CẤU HÌNH MODULE POPPY (config-contract — xem poppy_assistant/conf.py)
-# ============================================================================
+# Poppy module configuration; see poppy_assistant/conf.py for the full contract.
 POPPY = {
     "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY", ""),
     "BUSINESS_NAME": os.getenv("BUSINESS_NAME", "Petal & Polish"),
     "ASSISTANT_NAME": os.getenv("ASSISTANT_NAME", "Poppy"),
     "TONE": "warm, friendly and concise",
-    # "CUSTOM_RULES": "Luôn nhắc khách mang theo mã ưu đãi nếu có.",
-    "ENABLED_TOOLS": None,  # None = bật hết; hoặc ["booking", "faq"]
+    "ENABLED_TOOLS": None,  # None enables all tools; or e.g. ["booking", "faq"]
     "DOCS_DIR": BASE_DIR / "docs",
     "CHROMA_DB_DIR": BASE_DIR / "chroma_db",
-    # --- Telegram (để trống -> chế độ giả lập in log) ---
     "TELEGRAM_BOT_TOKEN": os.getenv("TELEGRAM_BOT_TOKEN", ""),
     "TELEGRAM_CHAT_ID": os.getenv("TELEGRAM_CHAT_ID", ""),
-    # --- Twilio (optional [phone]) ---
     "TWILIO_ACCOUNT_SID": os.getenv("TWILIO_ACCOUNT_SID", ""),
     "TWILIO_AUTH_TOKEN": os.getenv("TWILIO_AUTH_TOKEN", ""),
     "TWILIO_FROM_NUMBER": os.getenv("TWILIO_FROM_NUMBER", ""),

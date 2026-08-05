@@ -1,5 +1,3 @@
-"""urls.py — Định tuyến API của module (gắn dưới tiền tố của khách, vd /api/)."""
-
 from django.urls import path
 
 from poppy_assistant import views

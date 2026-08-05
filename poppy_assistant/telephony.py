@@ -1,11 +1,3 @@
-"""
-telephony.py — Đặt cuộc gọi ĐI qua Twilio ("AI gọi vào số điện thoại thật").
-
-Khách bấm nút -> ``POST /call`` -> ``place_call()`` bảo Twilio quay số. Khi bắt máy,
-Twilio mở Media Stream tới ``/ws/twilio``; TwilioVoiceConsumer bắc cầu sang Gemini.
-Chỉ dùng ``requests`` (REST) — không cần SDK Twilio. Bí mật chỉ ở cấu hình, không log.
-"""
-
 from __future__ import annotations
 
 import re
@@ -19,7 +11,7 @@ _TWILIO_API = "https://api.twilio.com/2010-04-01/Accounts/{sid}/Calls.json"
 
 
 def normalize_phone(raw: str) -> str:
-    """Đưa số về E.164 (+<mã quốc gia><số>). Số nội địa '0...' -> mã mặc định."""
+    """Normalise a number to E.164, applying the default country code to local ones."""
     cleaned = re.sub(r"[^\d+]", "", raw or "")
     if not cleaned:
         return ""
@@ -34,7 +26,7 @@ def normalize_phone(raw: str) -> str:
 
 
 def _stream_url() -> str:
-    """Đổi PUBLIC_BASE_URL thành URL WebSocket wss/ws + '/ws/twilio'."""
+    """Turn PUBLIC_BASE_URL into the wss/ws URL for the Twilio media stream."""
     base = conf.PUBLIC_BASE_URL
     if base.startswith("https://"):
         base = "wss://" + base[len("https://"):]
@@ -44,7 +36,7 @@ def _stream_url() -> str:
 
 
 def place_call(to_number: str) -> dict:
-    """Bảo Twilio quay số ``to_number`` và bắc audio về ``/ws/twilio``."""
+    """Ask Twilio to dial ``to_number`` and stream the call audio to /ws/twilio."""
     if not conf.TWILIO_ENABLED:
         return {"ok": False, "error": "Phone calling isn't configured yet. Please set the Twilio number."}
     if not conf.PUBLIC_BASE_URL:
@@ -68,7 +60,7 @@ def place_call(to_number: str) -> dict:
             timeout=15,
         )
     except requests.RequestException as exc:
-        print(f"[CALL] Không gọi được Twilio API: {type(exc).__name__}", flush=True)
+        print(f"[CALL] Twilio API unreachable: {type(exc).__name__}", flush=True)
         return {"ok": False, "error": "Couldn't reach the phone service. Try again."}
 
     if resp.status_code in (200, 201):
@@ -77,7 +69,7 @@ def place_call(to_number: str) -> dict:
             sid = resp.json().get("sid", "")
         except ValueError:
             pass
-        print(f"[CALL] Đã đặt cuộc gọi tới {to} (sid={sid}).", flush=True)
+        print(f"[CALL] Call placed to {to} (sid={sid}).", flush=True)
         return {"ok": True, "sid": sid}
 
     detail = ""
@@ -86,7 +78,7 @@ def place_call(to_number: str) -> dict:
         detail = f"{body.get('code')}: {body.get('message')}"
     except ValueError:
         detail = resp.text[:200]
-    print(f"[CALL] Twilio từ chối (HTTP {resp.status_code}) {detail}", flush=True)
+    print(f"[CALL] Twilio rejected the call (HTTP {resp.status_code}) {detail}", flush=True)
 
     friendly = "Couldn't place the call."
     if "21219" in detail or "21608" in detail or "unverified" in detail.lower():

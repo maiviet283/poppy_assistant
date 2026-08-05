@@ -9,6 +9,46 @@ Hướng dẫn cho Claude Code (và lập trình viên) khi làm việc trong re
 
 ---
 
+## 0. Quy ước viết code (BẮT BUỘC)
+
+Áp dụng cho mọi file Python trong repo. Khách hàng của dự án là dân IT — code phải sạch,
+gọn, và **không lộ dấu vết "sinh bằng AI"**.
+
+**Ngôn ngữ & comment**
+- Toàn bộ **comment, docstring, log, và chuỗi chương trình viết bằng tiếng Anh**, súc tích.
+- **KHÔNG có docstring/comment tiêu đề ở đầu file.** File bắt đầu ngay bằng `from __future__
+  import annotations` (nếu cần) rồi tới import.
+- **Mọi class và function/method phải có docstring tiếng Anh một dòng** (tối đa vài dòng nếu
+  thật cần) nói *nó làm gì*, không mô tả từng bước hiển nhiên.
+- **Không viết comment "kiểu AI"**: không giải thích điều hiển nhiên, không comment lan man,
+  không kể lể (`# vector DB cho RAG (embedding local ONNX)`, `# bài học đổ máu #5`…). Chỉ
+  comment khi lý do *không* đọc được từ code (một quyết định trái trực giác, một cạm bẫy).
+- Không dùng emoji trong code trừ khi là nội dung thông báo cho người dùng cuối.
+
+**Clean code**
+- Đặt tên rõ nghĩa; hàm làm một việc; tránh lặp (DRY); early-return thay vì lồng sâu.
+- Giữ public API ổn định (§8 Hợp đồng API). Đổi hành vi phải có lý do.
+- Không thêm phụ thuộc mới ở tầng lõi (chat/RAG). Voice import phải **lazy** (Trụ #1).
+
+**Truy vấn DB — bắt buộc**
+- **Tránh N+1 query.** Không gọi DB trong vòng lặp trên một queryset. Nếu cần dữ liệu phụ
+  thuộc (VD thời lượng offering cho từng booking) → nạp **một map/dict một lần** rồi tra cứu
+  trong bộ nhớ (xem `DefaultBookingBackend.conflicts` + `_duration_map`).
+- **Chỉ lấy đúng cột cần** — dùng `.values()` / `.values_list()` khi chỉ cần dữ liệu thô, hoặc
+  `.only(*fields)` khi cần model instance. Không nạp cả row nếu chỉ dùng vài trường; cũng
+  không thiếu trường khiến Django lazy-load gây thêm query.
+- Dùng `select_related` / `prefetch_related` khi truy cập quan hệ. Bọc thao tác ghi nhiều
+  bước trong `transaction.atomic()`; dùng `select_for_update()` cho update/cancel.
+
+**Verify sau khi sửa** (không tốn token):
+```powershell
+python manage.py check
+python manage.py makemigrations --check --dry-run   # models & migrations đồng bộ
+python manage.py test poppy_assistant
+```
+
+---
+
 ## 1. Poppy là gì
 
 Poppy là **trợ lý AI lễ tân** cho doanh nghiệp dịch vụ (mẫu demo: tiệm nail "Petal &

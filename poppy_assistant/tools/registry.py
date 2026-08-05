@@ -1,17 +1,3 @@
-"""
-registry.py — Tool Registry: khai báo công cụ MỘT NƠI (MODULE_PLAN §8, Trụ registry).
-
-Mỗi tool đăng ký: name + description + parameters (JSON Schema kiểu OpenAI) + handler
-+ tags. Cả hai kênh đọc CÙNG registry này:
-  - Chat  : ``openai_schemas()`` (định dạng OpenAI) + ``execute_tool()`` (trả JSON).
-  - Voice : ``genai_tool()`` (đổi sang google-genai FunctionDeclaration) + ``run_tool()``.
-
-Thêm tool = 1 lần ``register(...)`` trong tools/*.py — KHÔNG còn cảnh sửa 4 chỗ như
-demo. ``enabled`` (POPPY['ENABLED_TOOLS']) lọc tool theo tag per doanh nghiệp.
-
-Mô tả tool + giá trị trả về viết TIẾNG ANH (Poppy mirror ngôn ngữ khách — bài học demo).
-"""
-
 from __future__ import annotations
 
 import json
@@ -21,7 +7,7 @@ _REGISTRY: dict[str, dict] = {}
 
 
 def register(name: str, description: str, parameters: dict, handler, tags=(), wants_source: bool = False) -> None:
-    """Đăng ký một tool vào registry (gọi lúc import trong tools/*.py)."""
+    """Register a tool. Called at import time from the tools/* modules."""
     _REGISTRY[name] = {
         "name": name,
         "description": description,
@@ -33,15 +19,15 @@ def register(name: str, description: str, parameters: dict, handler, tags=(), wa
 
 
 def _enabled_names(enabled) -> list[str]:
-    """Tên các tool được bật theo danh sách tag (None = tất cả)."""
+    """Return the names of enabled tools; None enables all, else filter by tag."""
     if enabled is None:
         return list(_REGISTRY)
     allow = set(enabled)
     return [n for n, s in _REGISTRY.items() if (not s["tags"]) or (allow & set(s["tags"]))]
 
 
-# --- Chat: schema OpenAI + thực thi trả JSON --------------------------------
 def openai_schemas(enabled=None) -> list[dict]:
+    """Return enabled tools as OpenAI-style function schemas (for chat)."""
     out = []
     for name in _enabled_names(enabled):
         s = _REGISTRY[name]
@@ -59,6 +45,7 @@ def openai_schemas(enabled=None) -> list[dict]:
 
 
 def _dispatch(name: str, kwargs: dict, source: str) -> dict:
+    """Invoke a tool handler by name, injecting ``source`` when it wants it."""
     spec = _REGISTRY.get(name)
     if spec is None:
         return {"ok": False, "detail": f"Unknown tool '{name}'."}
@@ -71,7 +58,7 @@ def _dispatch(name: str, kwargs: dict, source: str) -> dict:
 
 
 def execute_tool(name: str, arguments_json: str, source: str = "chat") -> str:
-    """Chat: chạy tool theo tên + tham số JSON (do model sinh), trả JSON kết quả."""
+    """Run a tool from a JSON argument string (chat) and return a JSON result."""
     try:
         kwargs = json.loads(arguments_json) if arguments_json else {}
     except json.JSONDecodeError:
@@ -80,13 +67,15 @@ def execute_tool(name: str, arguments_json: str, source: str = "chat") -> str:
 
 
 def run_tool(name: str, args: dict, source: str = "voice") -> dict:
-    """Voice: chạy tool theo tên + dict tham số, trả dict kết quả cho Gemini Live."""
+    """Run a tool from a dict of arguments (voice) and return a dict result."""
     return _dispatch(name, dict(args or {}), source)
 
 
-# --- Voice: đổi schema OpenAI -> google-genai (lazy import, chỉ khi bật voice) ---
 def genai_tool(enabled=None):
-    """Trả về một ``types.Tool`` gói mọi FunctionDeclaration được bật (dùng cho Live)."""
+    """Return a google-genai ``Tool`` wrapping the enabled function declarations.
+
+    Imported lazily so chat-only installs without google-genai keep working.
+    """
     from google.genai import types
 
     typemap = {

@@ -1,14 +1,3 @@
-"""
-orchestrator.py — Bộ điều phối chat text (port từ demo ``Chatbot``, tổng quát hóa).
-
-Kết hợp RAG + Function Calling qua LLM Gateway. Lịch sử (``self.messages``) truyền
-vào/ra để lưu trong session Django giữa các request. Tool đọc từ registry (lọc theo
-POPPY['ENABLED_TOOLS']); system prompt dựng từ business profile mỗi request.
-
-GIỮ NGUYÊN các lưới an toàn streaming đã đổ máu (bẫy #4): tách slot tool-call theo
-id/name, câu-cụt-nuốt-tool -> chạy lại non-stream, giữ thought_signature.
-"""
-
 from __future__ import annotations
 
 import json
@@ -22,12 +11,18 @@ from poppy_assistant.prompts import build_system_prompt, build_user_context
 
 
 class Orchestrator:
+    """Text-chat orchestrator combining RAG and function calling.
+
+    Conversation history is passed in and out so callers can persist it in the
+    Django session between requests. The system prompt is rebuilt from the current
+    business profile on every instance so long-lived sessions never keep a stale one.
+    """
+
     def __init__(self, messages: list[dict] | None = None) -> None:
         self.gateway = LLMGateway()
         self.max_rounds = conf.MAX_TOOL_ROUNDS
         self.tool_schemas = tool_registry.openai_schemas(conf.ENABLED_TOOLS)
 
-        # LUÔN thay system prompt bằng bản MỚI NHẤT (session sống lâu giữ prompt cũ).
         system = build_system_prompt()
         if messages:
             self.messages: list[dict] = list(messages)
@@ -41,13 +36,14 @@ class Orchestrator:
     def _create(self, stream: bool = False):
         return self.gateway.create(self.messages, self.tool_schemas, stream=stream)
 
-    # --- Không stream (ổn định nhất) ---------------------------------------
     def ask(self, question: str) -> str:
+        """Answer a question in a single non-streaming turn (most stable path)."""
         documents = rag.search(question)
         self.messages.append({"role": "user", "content": build_user_context(question, documents)})
         return self._finish_nonstream()
 
     def _finish_nonstream(self) -> str:
+        """Run tool-calling rounds without streaming until the model gives an answer."""
         for _ in range(self.max_rounds):
             response = self._create()
             message = response.choices[0].message
@@ -61,18 +57,24 @@ class Orchestrator:
             for tool_call in message.tool_calls:
                 name = tool_call.function.name
                 args = tool_call.function.arguments
-                print(f"   [Model gọi tool: {name}({args})]", flush=True)
+                print(f"   [tool call: {name}({args})]", flush=True)
                 result = tool_registry.execute_tool(name, args, source="chat")
                 self.messages.append(
                     {"role": "tool", "tool_call_id": tool_call.id, "content": result}
                 )
 
-        fallback = "Xin lỗi, mình đang gặp chút trục trặc khi xử lý. Bạn thử lại nhé."
+        fallback = "Sorry, I ran into a problem handling that. Please try again."
         self.messages.append({"role": "assistant", "content": fallback})
         return fallback
 
-    # --- Streaming (SSE) với lưới an toàn -----------------------------------
     def ask_stream(self, question: str):
+        """Answer a question as a stream of ``{"delta"}`` / ``{"reset"}`` events.
+
+        Streaming has two known failure modes handled here: a lost thought_signature
+        (rejected as a BadRequestError) and a truncated response that swallows a tool
+        call. Both fall back to the non-streaming path and emit a ``{"reset"}`` event
+        so the frontend discards whatever it rendered for the turn.
+        """
         documents = rag.search(question)
         self.messages.append({"role": "user", "content": build_user_context(question, documents)})
 
@@ -81,7 +83,7 @@ class Orchestrator:
                 stream = self._create(stream=True)
             except BadRequestError as exc:
                 if "thought_signature" in str(exc):
-                    print("[CHAT] thought_signature bị mất — rollback, chuyển non-stream.", flush=True)
+                    print("[CHAT] Lost thought_signature; rolling back to non-streaming.", flush=True)
                     while self.messages and self.messages[-1]["role"] != "user":
                         self.messages.pop()
                     yield {"reset": True}
@@ -132,9 +134,10 @@ class Orchestrator:
             answer = "".join(content_parts)
 
             if not calls_acc:
-                # Câu cụt bất thường (stream đứt gánh / nuốt tool) -> chạy lại non-stream.
+                # A suspiciously short reply usually means the stream dropped a tool
+                # call, so retry the whole turn without streaming.
                 if len(answer.strip()) < 12:
-                    print(f"[CHAT] Stream trả câu cụt ({answer.strip()!r}) — chuyển non-stream.", flush=True)
+                    print(f"[CHAT] Stream returned a stub ({answer.strip()!r}); switching to non-streaming.", flush=True)
                     yield {"reset": True}
                     yield {"delta": self._finish_nonstream()}
                     return
@@ -170,10 +173,10 @@ class Orchestrator:
             for call in calls:
                 name = call["function"]["name"]
                 args = call["function"]["arguments"]
-                print(f"   [Model gọi tool: {name}({args})]", flush=True)
+                print(f"   [tool call: {name}({args})]", flush=True)
                 result = tool_registry.execute_tool(name, args, source="chat")
                 self.messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
 
-        fallback = "Xin lỗi, mình đang gặp chút trục trặc khi xử lý. Bạn thử lại nhé."
+        fallback = "Sorry, I ran into a problem handling that. Please try again."
         self.messages.append({"role": "assistant", "content": fallback})
         yield {"delta": fallback}

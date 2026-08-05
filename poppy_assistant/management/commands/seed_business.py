@@ -1,12 +1,3 @@
-"""
-Management command: nạp dữ liệu mẫu (Offering + Resource).
-
-    python manage.py seed_business
-
-Idempotent (get_or_create). Dữ liệu mẫu là tiệm nail để demo; đổi danh mục của khách
-qua /admin/ hoặc sửa 2 danh sách dưới đây. Khớp với docs/*.md mẫu.
-"""
-
 from __future__ import annotations
 
 from decimal import Decimal
@@ -34,9 +25,10 @@ RESOURCES = [
 
 
 class Command(BaseCommand):
-    help = "Nạp dữ liệu mẫu: dịch vụ (Offering) và nguồn lực (Resource)."
+    help = "Seed sample offerings and resources."
 
     def handle(self, *args, **options) -> None:
+        """Insert the sample catalogue idempotently via get_or_create."""
         for name, price, minutes, desc in OFFERINGS:
             _, created = Offering.objects.get_or_create(
                 name=name,
@@ -50,4 +42,4 @@ class Command(BaseCommand):
             )
             self.stdout.write(("+ " if created else "= ") + f"Resource: {name}")
 
-        self.stdout.write(self.style.SUCCESS("\nĐã nạp xong dữ liệu mẫu."))
+        self.stdout.write(self.style.SUCCESS("\nSample data seeded."))

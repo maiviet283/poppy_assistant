@@ -1,19 +1,3 @@
-"""
-service.py — Máy trạng thái đặt lịch (guardrails) chạy TRÊN backend.
-
-Đây là "tầng tool" giữ luật confirm-before-commit (MODULE_PLAN §8). Mọi thao tác
-dữ liệu đi qua ``get_backend()`` nên đổi backend (adapter) không phải sửa file này.
-
-Các cửa chặn (đều KHÔNG ghi nếu chưa đạt):
-  - thiếu trường bắt buộc  -> need_more_info
-  - chưa xác nhận          -> needs_confirmation
-  - đã có lịch y hệt       -> already_booked (idempotent — gật 2 lần vẫn 1 lịch)
-  - trùng giờ khác nội dung-> use_update_instead
-  - nguồn lực kín giờ      -> resource_busy
-
-Giá trị tool trả về viết TIẾNG ANH (Poppy mirror ngôn ngữ khách — bài học demo).
-"""
-
 from __future__ import annotations
 
 from django.utils import timezone
@@ -25,24 +9,25 @@ from poppy_assistant.notify import notify_staff
 
 
 def _parse_start(time_text: str):
-    """Đổi chuỗi ISO thành datetime có timezone; None nếu không phải ISO."""
+    """Parse an ISO string into a timezone-aware datetime, or None if not ISO."""
     dt = parse_datetime(time_text or "")
     if dt and timezone.is_naive(dt):
         dt = timezone.make_aware(dt, timezone.get_current_timezone())
     return dt
 
 
-# --- Đọc danh mục -----------------------------------------------------------
 def list_offerings() -> dict:
+    """Return the catalogue of offerings."""
     return {"offerings": get_backend().offerings()}
 
 
 def list_resources() -> dict:
+    """Return the catalogue of resources."""
     return {"resources": get_backend().resources()}
 
 
 def check_availability(appointment_time: str = "", resource: str = "", offering: str = "") -> dict:
-    """Khung giờ này nguồn lực chỉ định có rảnh không, hoặc nguồn lực nào trống."""
+    """Check whether a resource is free at a time, or which resources are free."""
     backend = get_backend()
     start = _parse_start(appointment_time)
     if not start:
@@ -72,6 +57,7 @@ def check_availability(appointment_time: str = "", resource: str = "", offering:
 
 
 def find_bookings(phone: str = "") -> dict:
+    """Return existing bookings for a phone number."""
     phone = (phone or "").strip()
     if not phone:
         return {"ok": False, "detail": "Need a phone number to look up existing bookings."}
@@ -79,7 +65,6 @@ def find_bookings(phone: str = "") -> dict:
     return {"phone": phone, "count": len(bookings), "bookings": bookings}
 
 
-# --- Đặt lịch ---------------------------------------------------------------
 _REQUIRED_FIELDS = [
     ("customer_name", "the customer's name"),
     ("phone", "a contact phone number"),
@@ -99,6 +84,11 @@ def create_booking(
     notes: str = "",
     source: str = "chat",
 ) -> dict:
+    """Save a booking, enforcing the confirm-before-commit guardrails.
+
+    Nothing is written unless every required field is present, the customer has
+    confirmed, and the slot is free. Duplicate requests are idempotent.
+    """
     backend = get_backend()
     fields = {
         "customer_name": (customer_name or "").strip(),
@@ -137,8 +127,8 @@ def create_booking(
     start = _parse_start(fields["appointment_time"])
     duration = backend.offering_duration(fields["offering"])
 
-    # Chống lưu TRÙNG (idempotent). Nếu chi tiết KHÁC lịch đang có -> đây là yêu cầu
-    # SỬA: chỉ model sang update_booking, tuyệt đối không trả ok=true.
+    # A duplicate with the same details is idempotent; a duplicate with different
+    # details is an edit and must be routed to update_booking, never re-created.
     dup = backend.find_duplicate(fields["phone"], start, fields["appointment_time"])
     if dup:
         same_resource = is_any_resource(fields["resource"]) or (
@@ -188,12 +178,12 @@ def create_booking(
     info = backend.create(fields, start, source)
 
     notify_staff(
-        f"🌸 <b>Lịch hẹn mới — {conf.BUSINESS_NAME}</b>\n"
-        f"<b>Khách:</b> {info['name']}\n"
-        f"<b>SĐT:</b> {info['phone'] or '—'}\n"
-        f"<b>Dịch vụ:</b> {info['offering'] or '—'}\n"
-        f"<b>Nguồn lực:</b> {info['resource'] or 'bất kỳ'}\n"
-        f"<b>Thời gian:</b> {info['time']}"
+        f"🌸 <b>New booking — {conf.BUSINESS_NAME}</b>\n"
+        f"<b>Customer:</b> {info['name']}\n"
+        f"<b>Phone:</b> {info['phone'] or '—'}\n"
+        f"<b>Service:</b> {info['offering'] or '—'}\n"
+        f"<b>Resource:</b> {info['resource'] or 'any'}\n"
+        f"<b>Time:</b> {info['time']}"
     )
 
     return {
@@ -207,11 +197,10 @@ def create_booking(
     }
 
 
-# --- Sửa / hủy --------------------------------------------------------------
 def _locate(phone: str, booking_id=None):
-    """Tìm lịch (chưa hủy) theo SĐT; nhiều lịch thì cần booking_id.
+    """Find a non-cancelled booking by phone; require booking_id when several exist.
 
-    Trả (info, None) khi tìm được, hoặc (None, dict_lỗi) khi không.
+    Returns (info, None) on success or (None, error_dict) otherwise.
     """
     backend = get_backend()
     phone = (phone or "").strip()
@@ -254,6 +243,7 @@ def update_booking(
     new_name: str = "",
     customer_confirmed=False,
 ) -> dict:
+    """Change an existing booking, requiring confirmation and a free slot."""
     backend = get_backend()
     info, err = _locate(phone, booking_id)
     if err:
@@ -293,11 +283,9 @@ def update_booking(
             final_start, backend.offering_duration(final_offering), final_resource,
             exclude_id=info["id"],
         )
-    elif changes["resource"]:
-        # Đổi nguồn lực nhưng giữ giờ cũ: không parse lại được start từ text -> bỏ qua
-        # kiểm chồng giờ (giữ hành vi an toàn, không chặn nhầm). Ghi chú cho tương lai.
-        conflicts = []
     else:
+        # Keeping the old time: the stored text can't be reparsed to a start, so the
+        # overlap check is skipped rather than risk a false conflict.
         conflicts = []
     if conflicts:
         return {
@@ -315,11 +303,11 @@ def update_booking(
         return {"ok": False, "status": "not_found", "detail": "Booking disappeared before update."}
 
     notify_staff(
-        f"✏️ <b>Cập nhật lịch hẹn — {conf.BUSINESS_NAME}</b>\n"
-        f"<b>Khách:</b> {updated['name']} ({updated['phone']})\n"
-        f"<b>Dịch vụ:</b> {updated['offering'] or '—'}\n"
-        f"<b>Nguồn lực:</b> {updated['resource'] or 'bất kỳ'}\n"
-        f"<b>Thời gian:</b> {updated['time']}"
+        f"✏️ <b>Booking updated — {conf.BUSINESS_NAME}</b>\n"
+        f"<b>Customer:</b> {updated['name']} ({updated['phone']})\n"
+        f"<b>Service:</b> {updated['offering'] or '—'}\n"
+        f"<b>Resource:</b> {updated['resource'] or 'any'}\n"
+        f"<b>Time:</b> {updated['time']}"
     )
 
     return {
@@ -334,6 +322,7 @@ def update_booking(
 
 
 def cancel_booking(phone: str = "", booking_id=None, customer_confirmed=False) -> dict:
+    """Cancel an existing booking, requiring confirmation first."""
     backend = get_backend()
     info, err = _locate(phone, booking_id)
     if err:
@@ -355,10 +344,10 @@ def cancel_booking(phone: str = "", booking_id=None, customer_confirmed=False) -
         return {"ok": False, "status": "not_found", "detail": "Booking disappeared before cancel."}
 
     notify_staff(
-        f"🗑️ <b>Hủy lịch hẹn — {conf.BUSINESS_NAME}</b>\n"
-        f"<b>Khách:</b> {cancelled['name']} ({cancelled['phone']})\n"
-        f"<b>Dịch vụ:</b> {cancelled['offering'] or '—'}\n"
-        f"<b>Thời gian:</b> {cancelled['time']}"
+        f"🗑️ <b>Booking cancelled — {conf.BUSINESS_NAME}</b>\n"
+        f"<b>Customer:</b> {cancelled['name']} ({cancelled['phone']})\n"
+        f"<b>Service:</b> {cancelled['offering'] or '—'}\n"
+        f"<b>Time:</b> {cancelled['time']}"
     )
 
     return {
