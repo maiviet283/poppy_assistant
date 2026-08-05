@@ -22,85 +22,96 @@
   (vd đặt file vào chỗ Django phục vụ), hoặc bật django-cors-headers + SameSite=None.
 -->
 <style>
+  /* Web 2.0 đời đầu: navy #3b5998, nền xanh-xám nhạt, Lucida/Tahoma 11px, góc vuông. */
   :root {
-    --bg: #faf7f8; --panel: #fff; --ink: #2b2530; --muted: #8a8290;
-    --accent: #e75a8f; --accent-ink: #fff; --line: #efe7ec;
-    --bot-bg: #f3edf1; --user-bg: #e75a8f; --ok: #2e9e6b; --err: #d1435b;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #16121a; --panel: #201a26; --ink: #f0eaf2; --muted: #9d93a6;
-      --accent: #f176a6; --accent-ink: #1a1020; --line: #322838;
-      --bot-bg: #2a2230; --user-bg: #b8437a; --ok: #55c795; --err: #ff7089;
-    }
+    --navy: #3b5998; --navy-mid: #6d84b4; --navy-pale: #d8dfea; --navy-wash: #eceff5;
+    --page: #ffffff; --ink: #333333; --muted: #777777; --link: #3b5998;
+    --line: #b3b3b3; --line-soft: #d8dfea; --btn-face: #eceff5;
+    --ok: #4e8a3c; --err: #b32b2b;
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    display: flex; justify-content: center; padding: 24px 16px;
+    margin: 0; background: var(--page); color: var(--ink);
+    font: 11px/1.45 "Lucida Grande", Tahoma, Verdana, "Segoe UI", sans-serif;
+    display: flex; justify-content: center; padding: 0 0 28px;
   }
-  .wrap { width: 100%; max-width: 560px; }
-  h1 { font-size: 18px; margin: 0 0 4px; }
-  .sub { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+  .wrap { width: 100%; max-width: 620px; }
+  /* Thanh xanh trên cùng + tab — chữ ký của giao diện thời đó. */
+  .masthead { background: var(--navy); margin: 0 0 14px; border-bottom: 1px solid #2d4373; }
+  .masthead .bar-top { padding: 7px 12px 6px; display: flex; align-items: baseline; gap: 10px; }
+  h1 { font-size: 17px; font-weight: bold; color: #fff; margin: 0; letter-spacing: -.02em; }
+  .sub { color: #b8c4dc; font-size: 11px; margin: 0; }
+  .tabs { background: var(--navy-mid); padding: 0 8px; display: flex; gap: 1px; }
+  .tabs span { color: #fff; font-size: 11px; padding: 4px 10px 5px; }
+  .tabs span.on { background: var(--navy-pale); color: var(--navy); font-weight: bold; }
+  .wrap > *:not(.masthead) { margin-left: 12px; margin-right: 12px; }
   .config {
-    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-    padding: 12px; margin-bottom: 14px; display: flex; gap: 8px; align-items: center;
-    flex-wrap: wrap;
+    background: var(--navy-wash); border: 1px solid var(--line-soft); padding: 8px 10px;
+    margin-bottom: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
   }
-  .config label { font-size: 13px; color: var(--muted); }
+  .config label { font-size: 11px; color: var(--navy); font-weight: bold; }
   .config input {
-    flex: 1; min-width: 180px; padding: 8px 10px; border: 1px solid var(--line);
-    border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit;
+    flex: 1; min-width: 180px; padding: 3px 5px; border: 1px solid var(--line);
+    background: #fff; color: var(--ink); font: inherit;
   }
-  .card {
-    background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
-    overflow: hidden; box-shadow: 0 6px 24px rgba(0,0,0,.06);
-  }
+  .card { background: #fff; border: 1px solid var(--line); }
   .head {
-    padding: 12px 16px; border-bottom: 1px solid var(--line);
-    display: flex; align-items: center; gap: 8px;
+    background: var(--navy-pale); border-bottom: 1px solid var(--line);
+    padding: 5px 10px; display: flex; align-items: center; gap: 7px;
   }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
-  .dot.on { background: var(--ok); }
-  .head b { font-size: 14px; }
-  .head .st { margin-left: auto; font-size: 12px; color: var(--muted); }
-  .log {
-    height: 380px; overflow-y: auto; padding: 16px; display: flex;
-    flex-direction: column; gap: 10px;
-  }
-  .msg { max-width: 82%; padding: 9px 13px; border-radius: 14px; white-space: pre-wrap;
-         word-wrap: break-word; }
-  .msg.bot  { background: var(--bot-bg); color: var(--ink); align-self: flex-start;
-              border-bottom-left-radius: 4px; }
-  .msg.user { background: var(--user-bg); color: #fff; align-self: flex-end;
-              border-bottom-right-radius: 4px; }
-  .msg.sys  { align-self: center; background: transparent; color: var(--muted);
-              font-size: 12px; font-style: italic; padding: 2px; }
+  .dot { width: 7px; height: 7px; background: var(--muted); border: 1px solid #5b6a86; }
+  .dot.on { background: var(--ok); border-color: #2f5a24; }
+  .head b { font-size: 11px; color: var(--navy); }
+  .head .st { margin-left: auto; font-size: 11px; color: var(--muted); }
+  .log { height: 400px; overflow-y: auto; padding: 0; }
+  /* Danh sách sọc xen kẽ, không phải bong bóng chat. */
+  .msg { padding: 7px 10px; white-space: pre-wrap; word-wrap: break-word;
+         border-bottom: 1px solid var(--line-soft); }
+  .msg::before { font-weight: bold; color: var(--link); margin-right: 5px; }
+  .msg.bot { background: #fff; }
+  .msg.bot::before { content: "Poppy:"; }
+  .msg.user { background: var(--navy-wash); }
+  .msg.user::before { content: "Bạn:"; }
+  .msg.sys { background: #fffbe8; color: #7a6a3a; font-size: 11px; text-align: center;
+             border-bottom: 1px solid #ecdfae; }
+  .msg.sys::before { content: none; }
   .msg.bot.streaming::after { content: "▋"; opacity: .5; }
   .bar {
-    display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line);
+    display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--line);
+    background: var(--navy-wash);
   }
   .bar input {
-    flex: 1; padding: 11px 14px; border: 1px solid var(--line); border-radius: 22px;
-    background: var(--bg); color: var(--ink); font: inherit;
+    flex: 1; padding: 4px 6px; border: 1px solid var(--line); background: #fff;
+    color: var(--ink); font: inherit; font-size: 12px;
   }
   button {
-    border: none; border-radius: 22px; padding: 0 18px; font: inherit; font-weight: 600;
-    cursor: pointer; background: var(--accent); color: var(--accent-ink);
+    border: 1px solid var(--line); padding: 3px 12px; font: inherit; font-size: 11px;
+    font-weight: bold; cursor: pointer; background: var(--btn-face); color: var(--navy);
   }
+  button:hover { background: var(--navy-pale); }
+  button:active { border-color: var(--navy); }
   button:disabled { opacity: .5; cursor: default; }
-  button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
-  .row { display: flex; gap: 8px; margin-top: 12px; }
-  .foot { font-size: 12px; color: var(--muted); margin-top: 14px; }
-  .foot code { background: var(--bot-bg); padding: 1px 5px; border-radius: 5px; }
+  button.ghost { background: #fff; }
+  .row { display: flex; gap: 6px; margin-top: 10px; }
+  .foot { font-size: 11px; color: var(--muted); margin-top: 14px; line-height: 1.6;
+          border-top: 1px solid var(--line-soft); padding-top: 9px; }
+  .foot code { font-family: "Courier New", monospace; background: var(--navy-wash);
+    padding: 0 3px; border: 1px solid var(--line-soft); color: var(--navy); }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Poppy — Template test tích hợp API</h1>
-  <p class="sub">Nối trực tiếp <code style="all:unset;font-family:monospace">/api/chat</code> (SSE) và
-    <code style="all:unset;font-family:monospace">/ws/voice</code>. Không React, không build.</p>
+  <div class="masthead">
+    <div class="bar-top">
+      <h1>poppy</h1>
+      <p class="sub">template test tích hợp API — không React, không build</p>
+    </div>
+    <div class="tabs">
+      <span class="on">Chat</span>
+      <span>Voice</span>
+      <span>API</span>
+    </div>
+  </div>
 
   <div class="config">
     <label for="apiBase">API base</label>
