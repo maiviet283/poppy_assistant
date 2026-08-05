@@ -1,0 +1,31 @@
+"""
+asgi.py — Điểm vào ASGI: phân luồng HTTP (Django) và WebSocket (Channels).
+
+Khách ghép ``poppy_assistant.routing.websocket_urlpatterns`` vào ProtocolTypeRouter
+của họ y như dưới đây (cạnh route WS sẵn có của họ, nếu có).
+"""
+
+import os
+import sys
+
+from channels.routing import ProtocolTypeRouter, URLRouter
+from django.core.asgi import get_asgi_application
+
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+
+django_asgi_app = get_asgi_application()
+
+from poppy_assistant.routing import websocket_urlpatterns  # noqa: E402
+
+application = ProtocolTypeRouter(
+    {
+        "http": django_asgi_app,
+        "websocket": URLRouter(websocket_urlpatterns),
+    }
+)
