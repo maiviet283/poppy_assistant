@@ -67,6 +67,17 @@ Request:  { "phone": "+61..." }
 Response: { "ok": true, "sid": "..." }   |   { "ok": false, "error": "..." }
 ```
 
+## 3b. Khách gọi ĐẾN — `POST /api/voice/incoming` (optional [phone])
+
+Không phải endpoint cho FE: đây là webhook **Twilio** gọi khi có cuộc gọi đến số của
+doanh nghiệp. Trong Twilio Console, phần *Voice → A call comes in* của số điện thoại,
+đặt **Webhook / HTTP POST** trỏ tới `<PUBLIC_BASE_URL>/api/voice/incoming`.
+
+Endpoint trả TwiML `<Connect><Stream>` nối audio cuộc gọi vào `wss://…/ws/twilio`, từ
+đó dùng chung bộ não voice với `/ws/voice`. Mỗi request được kiểm chữ ký
+`X-Twilio-Signature`; chữ ký dựng từ `PUBLIC_BASE_URL` nên **URL trong console phải
+khớp đúng `PUBLIC_BASE_URL`**, sai là 403.
+
 ## 4. CORS / session (khi FE khác domain với API)
 
 Cùng domain thì bỏ qua. Khác domain (vd FE ở `web.com`, API ở `api.web.com`):

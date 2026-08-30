@@ -4,7 +4,7 @@ import asyncio
 import json
 import re
 
-from django.http import HttpRequest, JsonResponse, StreamingHttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
@@ -81,6 +81,23 @@ def call_api(request: HttpRequest):
 
     result = telephony.place_call(phone)
     return JsonResponse(result, status=200 if result.get("ok") else 502)
+
+
+@csrf_exempt
+@require_POST
+def voice_incoming_api(request: HttpRequest):
+    """Answer an inbound Twilio call by connecting it to the /ws/twilio bridge."""
+    from poppy_assistant import telephony  # lazy: the phone extras are optional
+
+    params = request.POST.dict()
+    signature = request.META.get("HTTP_X_TWILIO_SIGNATURE", "")
+    if not telephony.verify_signature(request.get_full_path(), params, signature):
+        print("[CALL] Rejected an inbound webhook: bad signature or PUBLIC_BASE_URL "
+              "does not match the Voice URL set in Twilio.", flush=True)
+        return HttpResponse("Forbidden", status=403)
+
+    print(f"[CALL] Inbound call from {params.get('From', '?')}.", flush=True)
+    return HttpResponse(telephony.connect_stream_twiml(), content_type="text/xml")
 
 
 _SENTINEL = object()

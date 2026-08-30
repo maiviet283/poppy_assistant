@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import re
 from xml.sax.saxutils import quoteattr
 
@@ -35,6 +38,31 @@ def _stream_url() -> str:
     return base.rstrip("/") + "/ws/twilio"
 
 
+def connect_stream_twiml() -> str:
+    """TwiML that hands the call audio to the /ws/twilio bridge."""
+    return (
+        "<Response><Connect>"
+        f"<Stream url={quoteattr(_stream_url())} />"
+        "</Connect></Response>"
+    )
+
+
+def verify_signature(full_path: str, params: dict, signature: str) -> bool:
+    """Validate Twilio's X-Twilio-Signature for a webhook hit.
+
+    The signed URL is rebuilt from PUBLIC_BASE_URL rather than the request headers,
+    because behind a tunnel or proxy Django sees http/an internal host and the digest
+    would never match what Twilio signed.
+    """
+    token = conf.TWILIO_AUTH_TOKEN
+    base = conf.PUBLIC_BASE_URL
+    if not token or not base or not signature:
+        return False
+    payload = base.rstrip("/") + full_path + "".join(k + params[k] for k in sorted(params))
+    digest = hmac.new(token.encode(), payload.encode("utf-8"), hashlib.sha1).digest()
+    return hmac.compare_digest(base64.b64encode(digest).decode("ascii"), signature)
+
+
 def place_call(to_number: str) -> dict:
     """Ask Twilio to dial ``to_number`` and stream the call audio to /ws/twilio."""
     if not conf.TWILIO_ENABLED:
@@ -46,11 +74,7 @@ def place_call(to_number: str) -> dict:
     if not to or len(re.sub(r"\D", "", to)) < 8:
         return {"ok": False, "error": "That phone number doesn't look valid."}
 
-    twiml = (
-        "<Response><Connect>"
-        f"<Stream url={quoteattr(_stream_url())} />"
-        "</Connect></Response>"
-    )
+    twiml = connect_stream_twiml()
 
     try:
         resp = requests.post(
