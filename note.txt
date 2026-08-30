@@ -1,4 +1,53 @@
+Việc 1 — Chat + voice qua mạng (không dính số điện thoại)
 
+Cái bạn cần là voice qua WebSocket (/ws/voice, chạy trong consumers.py), không phải Twilio. Vậy chỉ cần:
 
+pip install poppy-assistant[voice]     # KHÔNG có [phone]
 
+Rồi ở asgi.py khách chỉ ghép websocket_urlpatterns như bình thường — route /ws/twilio vẫn nằm đó nhưng bạn không đụng tới, không khai TWILIO_* trong POPPY là xong. Không cần ngrok, không cần PUBLIC_BASE_URL. Frontend nối thẳng vào /ws/voice (client gửi mic PCM 16k, nhận bot PCM 24k — xem INTEGRATION.md). Zero sửa code.
 
+Việc 2 — RAG cho tài liệu (giờ làm việc, chính sách…)
+
+Đây là phần nhẹ nhất và không sửa một dòng code nào:
+
+Bỏ các file .md của khách (giờ mở cửa, chính sách đặt bàn, FAQ…) vào thư mục POPPY["DOCS_DIR"].
+Chạy python manage.py ingest để build lại vector DB.
+
+Chấm hết. RAG không quan tâm ngành nghề — nó chỉ đọc docs/*.md. Sửa docs thì nhớ ingest lại.
+
+Việc 3 — Bảng "bàn ăn / món ăn" với tên & trường khác
+
+Đây là chỗ bạn lo nhất, nên tôi nói thẳng: model của bạn đã trừu tượng sẵn cho việc này rồi, đừng nghĩ theo hướng "đổi tên bảng". Nhìn models.py:
+
+Khái niệm chung	Nail (demo)	Nhà hàng	Trường sẵn có khớp luôn
+Offering	dịch vụ làm gel	món ăn	name, price, duration_minutes, description
+Resource	thợ	bàn ăn	name, capacity (số ghế!), type_label, specialty
+Booking	lịch hẹn	đặt bàn	tên khách, giờ, offering, resource, status
+
+Nghĩa là "bàn ăn" ↔ Resource (và capacity chính là số chỗ ngồi — đã có sẵn), "món ăn" ↔ Offering. Bạn có hai con đường, và cho định hướng "chung chung cho dễ" thì con đường A là đúng:
+
+Con đường A — dùng nguyên bảng poppy_*, chỉ đổi nhãn (khuyên dùng khi làm project mới).
+
+Không tạo bảng mới, không sửa migration, không đổi db_table. Bạn chỉ:
+Nhập dữ liệu qua /admin/ hoặc sửa seed_business (đổ danh sách bàn vào Resource, món vào Offering).
+Đổi verbose_name trong Meta nếu muốn /admin/ hiện chữ "Bàn ăn" thay vì "Resource" — thuần hiển thị.
+Đổi tính cách bot bằng POPPY["BUSINESS_NAME"] / TONE / CUSTOM_RULES, không sửa prompt code.
+Bot, tool schema, guardrails đặt lịch (confirm-before-commit, chống trùng, chống kín chỗ) áp dụng nguyên xi. Đây thuần là "pip về rồi custom config" — không tái cấu trúc.
+
+Con đường B — khách ĐÃ có sẵn bảng mon_an, ban_an schema riêng.
+
+Lúc này bạn không muốn nhập liệu hai nơi. Viết một adapter khoảng ~10 method trả về dict đúng hình dạng (offerings(), resources(), conflicts(), create()… — xem Protocol ở backends.py:38), trỏ vào model của khách:
+POPPY["BOOKING_BACKEND"] = "myapp.backends.RestaurantBackend"
+Khi đó bảng poppy_offering/resource/booking không dùng tới. Guardrails vẫn tự áp vì chúng nằm ở service.py trên backend, không phải trong backend. Đây là công việc thật nhưng khu trú gọn trong một file — vẫn không đụng lõi.
+Kết luận cho định hướng của bạn
+
+Với hướng "làm chung chung cho dễ" → con đường A: pip install poppy-assistant[voice] rồi custom config + data + docs. Không tái cấu trúc. Cụ thể tổng cộng bạn chỉ chạm vào:
+
+settings.py: khai dict POPPY (business name, tone, key Gemini).
+urls.py + asgi.py: ghép route HTTP + WebSocket (mỗi file 2–3 dòng).
+/admin/ hoặc seed_business: nhập bàn + món.
+Thả docs/*.md + chạy ingest.
+
+Bạn chỉ cần viết code (con đường B) khi khách đã có DB đặt bàn từ trước và không muốn nhập trùng. Đó cũng là lý do cái "adapter seam" (BookingBackend) tồn tại — nó chính là cơ chế để module "chung chung" mà không bắt ai tái cấu trúc.
+
+Một lưu ý thành thật: nếu ngành nào đó thật sự cần trường dữ liệu mới mà Offering/Resource không có (ví dụ nhà hàng cần "khu vực hút thuốc / ngoài trời" như thuộc tính lọc), thì hoặc nhét tạm vào type_label/notes, hoặc mới cần con đường B. Còn "số chỗ ngồi, giá, thời lượng giữ bàn" thì đã có sẵn hết.
